@@ -123,9 +123,17 @@ class MyNodeNode(OpenMaya.MPxNode):
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aInput)
 
         MyNodeNode.aMultiply = nAttr.create("multiply", "mult", OpenMaya.MFnNumericData.kFloat, 2.0)
+        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
+        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
+        nAttr.writable = True   # default: True  — can receive incoming connections
+        nAttr.readable = True   # default: True  — can drive outgoing connections
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aMultiply)
 
         MyNodeNode.aOutput = nAttr.create("output", "out", OpenMaya.MFnNumericData.kFloat, 0.0)
+        nAttr.keyable = False   # default: False — output attrs are not keyable
+        nAttr.storable = False  # default: True  — output is computed, no need to store
+        nAttr.writable = False  # default: True  — output cannot receive connections
+        nAttr.readable = True   # default: True  — output can drive other nodes
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aOutput)
 
         OpenMaya.MPxNode.attributeAffects(MyNodeNode.aInput, MyNodeNode.aOutput)
@@ -204,6 +212,9 @@ class MyShapeNode(OpenMayaUI.MPxSurfaceShape):
         OpenMaya.MPxNode.addAttribute(MyShapeNode.aSize)
 
         MyShapeNode.aColor = nAttr.createColor("color", "clr")
+        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
+        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
+        nAttr.writable = True   # default: True  — can receive incoming connections
         nAttr.default = (1.0, 0.0, 0.0)
         OpenMaya.MPxNode.addAttribute(MyShapeNode.aColor)
     
@@ -485,6 +496,8 @@ Add support for reading or writing custom file formats in Maya's File > Import/E
 - Pipeline tools: DCC interchange formats
 
 ### Template Example
+
+**myTranslator.py**
 ```python
 import maya.api.OpenMaya as OpenMaya
 import maya.OpenMayaMPx as OpenMayaMPx
@@ -495,6 +508,20 @@ FILE_EXT = "myf"
 class MyTranslator(OpenMayaMPx.MPxFileTranslator):
     def __init__(self):
         OpenMayaMPx.MPxFileTranslator.__init__(self)
+
+    @staticmethod
+    def creator():
+        return OpenMayaMPx.asMPxPtr(MyTranslator())
+
+    @staticmethod
+    def _parse_options(opt_string):
+        """Parse semicolon-separated key=value option string into a dict."""
+        options = {}
+        for pair in opt_string.split(";"):
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                options[key.strip()] = value.strip()
+        return options
 
     def haveWriteMethod(self):
         return True  # supports export
@@ -511,7 +538,7 @@ class MyTranslator(OpenMayaMPx.MPxFileTranslator):
     def writer(self, file_obj, opt_string, access_mode):
         # opt_string contains options passed from the options dialog, e.g. "scale=1.0;normals=1"
         path = file_obj.fullName()
-        options = _parse_options(opt_string)
+        options = MyTranslator._parse_options(opt_string)
         try:
             # write your format here
             with open(path, "w") as f:
@@ -539,18 +566,6 @@ class MyTranslator(OpenMayaMPx.MPxFileTranslator):
             return OpenMayaMPx.MPxFileTranslator.kIsMyFileType
         return OpenMayaMPx.MPxFileTranslator.kNotMyFileType
 
-def _parse_options(opt_string):
-    """Parse semicolon-separated key=value option string into a dict."""
-    options = {}
-    for pair in opt_string.split(";"):
-        if "=" in pair:
-            key, value = pair.split("=", 1)
-            options[key.strip()] = value.strip()
-    return options
-
-def translator_creator():
-    return OpenMayaMPx.asMPxPtr(MyTranslator())
-
 # Registration
 
 def initializePlugin(mobject):
@@ -558,7 +573,7 @@ def initializePlugin(mobject):
     mPlugin.registerFileTranslator(
         PLUGIN_NAME,
         None,                   # icon file path (optional)
-        translator_creator,
+        MyTranslator.creator,
         "myTranslatorOpts",     # MEL proc name for the options dialog (optional)
         "scale=1.0;normals=1"   # default option string passed to writer/reader
     )
@@ -566,6 +581,56 @@ def initializePlugin(mobject):
 def uninitializePlugin(mobject):
     mPlugin = OpenMayaMPx.MFnPlugin(mobject)
     mPlugin.deregisterFileTranslator(PLUGIN_NAME)
+```
+
+**myTranslatorOpts.mel** — options dialog shown in Maya's Export dialog when the user clicks Options
+```mel
+// myTranslatorOpts.mel
+// Called by Maya with $action = "post" (build UI) or "query" (read UI and return option string).
+// The option string format is: "key1=value1;key2=value2;"
+// This proc name must match the string passed to registerFileTranslator.
+
+global proc int myTranslatorOpts(string $parent, string $action, string $initialSettings, string $resultCallback)
+{
+    int $result = 1;
+    string $optionList[];
+    string $optionBreakDown[];
+
+    if ($action == "post") {
+        setParent $parent;
+
+        columnLayout -adjustableColumn true;
+
+        checkBox -label "Export Normals" normalsCheck;
+        floatField -value 1.0 scaleField;
+        text -label "Scale";
+
+        // Apply initial settings to the UI controls
+        if (size($initialSettings) > 0) {
+            tokenize($initialSettings, ";", $optionList);
+            for ($i = 0; $i < size($optionList); $i++) {
+                tokenize($optionList[$i], "=", $optionBreakDown);
+                if ($optionBreakDown[0] == "normals") {
+                    checkBox -edit -value ($optionBreakDown[1] == "1") normalsCheck;
+                } else if ($optionBreakDown[0] == "scale") {
+                    floatField -edit -value $optionBreakDown[1] scaleField;
+                }
+            }
+        }
+
+    } else if ($action == "query") {
+        // Read UI controls and build the option string, then pass it back via the callback
+        string $currentOptions = "";
+        $currentOptions += "normals=" + `checkBox -q -value normalsCheck` + ";";
+        $currentOptions += "scale="   + `floatField -q -value scaleField` + ";";
+        eval($resultCallback + " \"" + $currentOptions + "\"");
+
+    } else {
+        $result = 0;
+    }
+
+    return $result;
+}
 ```
 
 ---
