@@ -116,23 +116,26 @@ class MyNodeNode(OpenMaya.MPxNode):
     def initialize():
         nAttr = OpenMaya.MFnNumericAttribute()
         MyNodeNode.aInput = nAttr.create("input", "in", OpenMaya.MFnNumericData.kFloat, 0.0)
-        nAttr.keyable = True
-        nAttr.storable = True
-        nAttr.writable = True
-        nAttr.readable = True
+        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
+        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
+        nAttr.writable = True   # default: True  — can receive incoming connections
+        nAttr.readable = True   # default: True  — can drive outgoing connections
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aInput)
+
         MyNodeNode.aMultiply = nAttr.create("multiply", "mult", OpenMaya.MFnNumericData.kFloat, 2.0)
-        nAttr.keyable = True
-        nAttr.storable = True
-        nAttr.writable = True
-        nAttr.readable = True
+        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
+        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
+        nAttr.writable = True   # default: True  — can receive incoming connections
+        nAttr.readable = True   # default: True  — can drive outgoing connections
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aMultiply)
+
         MyNodeNode.aOutput = nAttr.create("output", "out", OpenMaya.MFnNumericData.kFloat, 0.0)
-        nAttr.keyable = False
-        nAttr.storable = False
-        nAttr.writable = False
-        nAttr.readable = True
+        nAttr.keyable = False   # default: False — output attrs are not keyable
+        nAttr.storable = False  # default: True  — output is computed, no need to store
+        nAttr.writable = False  # default: True  — output cannot receive connections
+        nAttr.readable = True   # default: True  — output can drive other nodes
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aOutput)
+
         OpenMaya.MPxNode.attributeAffects(MyNodeNode.aInput, MyNodeNode.aOutput)
         OpenMaya.MPxNode.attributeAffects(MyNodeNode.aMultiply, MyNodeNode.aOutput)
     
@@ -203,14 +206,15 @@ class MyShapeNode(OpenMayaUI.MPxSurfaceShape):
     def initialize():
         nAttr = OpenMaya.MFnNumericAttribute()
         MyShapeNode.aSize = nAttr.create("size", "sz", OpenMaya.MFnNumericData.kFloat, 1.0)
-        nAttr.keyable = True
-        nAttr.storable = True
-        nAttr.writable = True
+        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
+        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
+        nAttr.writable = True   # default: True  — can receive incoming connections
         OpenMaya.MPxNode.addAttribute(MyShapeNode.aSize)
+
         MyShapeNode.aColor = nAttr.createColor("color", "clr")
-        nAttr.keyable = True
-        nAttr.storable = True
-        nAttr.writable = True
+        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
+        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
+        nAttr.writable = True   # default: True  — can receive incoming connections
         nAttr.default = (1.0, 0.0, 0.0)
         OpenMaya.MPxNode.addAttribute(MyShapeNode.aColor)
     
@@ -480,16 +484,114 @@ def uninitializePlugin(mobject):
 
 ---
 
+## 8. registerFileTranslator - File Import/Export
+
+### When to use
+Add support for reading or writing custom file formats in Maya's File > Import/Export dialogs.
+
+### Examples
+- Exporters: FBX, glTF, USD, Alembic
+- Importers: custom game formats, proprietary data
+- Converters: batch scene format conversion
+- Pipeline tools: DCC interchange formats
+
+### Template Example
+```python
+import maya.api.OpenMaya as OpenMaya
+import maya.OpenMayaMPx as OpenMayaMPx
+
+PLUGIN_NAME = "My Format"
+FILE_EXT = "myf"
+
+class MyTranslator(OpenMayaMPx.MPxFileTranslator):
+    def __init__(self):
+        OpenMayaMPx.MPxFileTranslator.__init__(self)
+
+    def haveWriteMethod(self):
+        return True  # supports export
+
+    def haveReadMethod(self):
+        return True  # supports import
+
+    def filter(self):
+        return "*.{}".format(FILE_EXT)  # file browser filter
+
+    def defaultExtension(self):
+        return FILE_EXT
+
+    def writer(self, file_obj, opt_string, access_mode):
+        # opt_string contains options passed from the options dialog, e.g. "scale=1.0;normals=1"
+        path = file_obj.fullName()
+        options = _parse_options(opt_string)
+        try:
+            # write your format here
+            with open(path, "w") as f:
+                f.write("# Exported by MyTranslator\n")
+                f.write("scale={}\n".format(options.get("scale", "1.0")))
+            OpenMaya.MGlobal.displayInfo("Exported: {}".format(path))
+        except Exception as e:
+            OpenMaya.MGlobal.displayError("Export failed: {}".format(str(e)))
+            raise
+
+    def reader(self, file_obj, opt_string, access_mode):
+        path = file_obj.fullName()
+        try:
+            # read your format here
+            with open(path, "r") as f:
+                data = f.read()
+            OpenMaya.MGlobal.displayInfo("Imported: {}".format(path))
+        except Exception as e:
+            OpenMaya.MGlobal.displayError("Import failed: {}".format(str(e)))
+            raise
+
+    def identifyFile(self, file_obj, buffer, size):
+        # return kIsMyFileType if the file belongs to this translator
+        if file_obj.fullName().endswith(".{}".format(FILE_EXT)):
+            return OpenMayaMPx.MPxFileTranslator.kIsMyFileType
+        return OpenMayaMPx.MPxFileTranslator.kNotMyFileType
+
+def _parse_options(opt_string):
+    """Parse semicolon-separated key=value option string into a dict."""
+    options = {}
+    for pair in opt_string.split(";"):
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            options[key.strip()] = value.strip()
+    return options
+
+def translator_creator():
+    return OpenMayaMPx.asMPxPtr(MyTranslator())
+
+# Registration
+
+def initializePlugin(mobject):
+    mPlugin = OpenMayaMPx.MFnPlugin(mobject)
+    mPlugin.registerFileTranslator(
+        PLUGIN_NAME,
+        None,                   # icon file path (optional)
+        translator_creator,
+        "myTranslatorOpts",     # MEL proc name for the options dialog (optional)
+        "scale=1.0;normals=1"   # default option string passed to writer/reader
+    )
+
+def uninitializePlugin(mobject):
+    mPlugin = OpenMayaMPx.MFnPlugin(mobject)
+    mPlugin.deregisterFileTranslator(PLUGIN_NAME)
+```
+
+---
+
 # Quick Decision Guide
 
-| Need to...          | Plugin Type                   |
-|--------------------|-------------------------------|
-| DO something       | registerCommand               |
-| CALCULATE something| registerNode                  |
-| DRAW something     | registerShape                 |
-| STORE complex data | registerData                  |
-| INTERACT           | registerContextCommand        |
-| DRAG/DROP behavior | registerDragAndDropBehavior   |
-| AUTO-GENERATED attr| registerAttributePatternFactory |
+| Need to...             | Plugin Type                     | Description                                                          |
+|------------------------|---------------------------------|----------------------------------------------------------------------|
+| DO something           | registerCommand                 | Execute operations, batch processes, or tools via MEL/Python command |
+| CALCULATE something    | registerNode                    | Process data and maintain attribute relationships in the DG          |
+| DRAW something         | registerShape                   | Create custom geometry, locators, or viewport objects                |
+| STORE complex data     | registerData                    | Define custom data types passed between nodes or cached              |
+| INTERACT               | registerContextCommand          | Build interactive viewport tools driven by mouse/keyboard input      |
+| DRAG/DROP behavior     | registerDragAndDropBehavior     | Customize what happens when objects are dragged in the UI            |
+| AUTO-GENERATE attrs    | registerAttributePatternFactory | Dynamically create attribute sets based on patterns or conditions    |
+| IMPORT/EXPORT files    | registerFileTranslator          | Add custom file format support to Maya's Import/Export dialogs       |
 
 Most plugins start with registerCommand for basic operations, then evolve to registerNode for complex data processing or registerShape for custom viewport display.
