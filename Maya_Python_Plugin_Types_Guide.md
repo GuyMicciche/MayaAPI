@@ -123,17 +123,9 @@ class MyNodeNode(OpenMaya.MPxNode):
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aInput)
 
         MyNodeNode.aMultiply = nAttr.create("multiply", "mult", OpenMaya.MFnNumericData.kFloat, 2.0)
-        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
-        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
-        nAttr.writable = True   # default: True  — can receive incoming connections
-        nAttr.readable = True   # default: True  — can drive outgoing connections
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aMultiply)
 
         MyNodeNode.aOutput = nAttr.create("output", "out", OpenMaya.MFnNumericData.kFloat, 0.0)
-        nAttr.keyable = False   # default: False — output attrs are not keyable
-        nAttr.storable = False  # default: True  — output is computed, no need to store
-        nAttr.writable = False  # default: True  — output cannot receive connections
-        nAttr.readable = True   # default: True  — output can drive other nodes
         OpenMaya.MPxNode.addAttribute(MyNodeNode.aOutput)
 
         OpenMaya.MPxNode.attributeAffects(MyNodeNode.aInput, MyNodeNode.aOutput)
@@ -212,9 +204,6 @@ class MyShapeNode(OpenMayaUI.MPxSurfaceShape):
         OpenMaya.MPxNode.addAttribute(MyShapeNode.aSize)
 
         MyShapeNode.aColor = nAttr.createColor("color", "clr")
-        nAttr.keyable = True    # default: False — shows in Channel Box and can be keyed
-        nAttr.storable = True   # default: True  — saved to .ma/.mb scene file
-        nAttr.writable = True   # default: True  — can receive incoming connections
         nAttr.default = (1.0, 0.0, 0.0)
         OpenMaya.MPxNode.addAttribute(MyShapeNode.aColor)
     
